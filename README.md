@@ -1,19 +1,12 @@
 # Syncable
 
-Synchronize JSON data structures over WebSockets and Redis
+Synchronize JSON data structures across servers and clients over WebSockets and Redis
 
 ```javascript
 // server.js
 
-const template = { title: 'My document' };
-let db = {};
-
-syncable.init({
-  reader: key => db[key],
-  writer: (key, data) => db[key] = data,
-});
-
 const app = express();
+const template = { title: 'My document' };
 app.get('/documents/:id', syncable(template));
 ```
 
@@ -21,7 +14,6 @@ app.get('/documents/:id', syncable(template));
 // client.js
 
 let doc = await syncable.client({url: `wss://localhost/documents/my-document`});
-
 doc = doc.sync(d => d.title = 'New title');
 ```
 
@@ -123,7 +115,7 @@ console.log(doc);
 
 ### License
 
-The MIT License (MIT)
+The MIT License
 
 Copyright (c) 2023 Frameable Inc, David Chester, Doug Brunton, Logan Bell, Daniel Dyssegaard Kallick
 
