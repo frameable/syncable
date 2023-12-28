@@ -113,7 +113,7 @@ console.log(doc);
 // { title: "My title" }
 ```
 
-### License
+## License
 
 The MIT License
 
