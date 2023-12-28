@@ -1,0 +1,28 @@
+{
+  "name": "syncable",
+  "version": "3.0.0-pre1",
+  "description": "",
+  "main": "index.js",
+  "browser": "dist/client.js",
+  "scripts": {
+    "test": "node test",
+    "build": "NODE_OPTIONS=--openssl-legacy-provider npx webpack"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "fs-promise": "^2.0.3",
+    "ioredis": "^4.17.3",
+    "isomorphic-ws": "^4.0.1",
+    "mkdirp": "^1.0.4",
+    "pigeon": "git+https://github.com/frameable/pigeon.git#1.4.7",
+    "reconnecting-websocket": "^4.4.0",
+    "ws": "^7.3.1"
+  },
+  "devDependencies": {
+    "express": "^4.17.1",
+    "vue": "^3.2.47",
+    "webpack": "^4.44.1",
+    "webpack-cli": "^3.3.12"
+  }
+}
