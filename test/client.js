@@ -290,7 +290,7 @@ async function setup() {
 
   let db = {};
 
-  Syncable.init({
+  Syncable.initialize({
     redis: process.env.REDIS ? 'localhost' : null,
     reader: key => db[key],
     writer: async (key, data) => {

@@ -6,8 +6,7 @@ Synchronize JSON data structures across servers and clients over WebSockets and 
 // server.js
 
 const app = express();
-const template = { title: 'My document' };
-app.get('/documents/:id', syncable(template));
+app.get('/documents/:id', syncable.handle());
 ```
 
 ```javascript
@@ -26,6 +25,11 @@ Syncable is a framework for synchronizing JSON data structures across many serve
 Syncable documents consist of snapshots and change events.  At any time, the current state of a document can be derived from its latest snapshot and any subsequent changes.  Snapshots are stored in persistent storage, and changes are temporarily queued in Redis streams.  By default, snapshots are taken within 30 seconds after each change.  Change events live in Redis only until they've been incorporated into a snapshot, after which point may be removed.
 
 Underlying documents are based on [Pigeon](https://github.com/frameable/pigeon), which itself is heavily inspired by [Automerge](https://github.com/automerge/automerge).  When a client changes a document, a JSON Patch style diff is generated, and propagated to all other servers and clients who have that document loaded.  Even when changes arrive in a different order, the result is deterministic.
+
+## Performance and scalability
+
+Syncable scales across many backend servers and up to hundreds or thousands of simultaneous clients per document.  In lower-volume settings, each change is broadcast and applied individually, but as volume increases, changes are batched and applied in bulk.  For example, if changes are happening at a rate of 1 per second, then they will be applied without delay. 
+ However, once changes are arriving at 10 per second, then the changes will be queued for 3 seconds, and then applied together as a batch.
 
 ## Client API
 
@@ -64,26 +68,36 @@ console.log(doc);
 
 ## Server API
 
-#### syncable.init(options)
+#### syncable.initialize(options)
 
-Configure and initialize the syncable library.  Options include:
+Configure and initialize the syncable library.  All properties are optional:
 
-- `writer` - Function to write documents to persistent storage (such as Postgres, S3, disk, etc).  Takes `key` and `data` parameters.  Defaults to local disk.
+- `writer` - Function to override writing document snapshots to persistent storage.  By default, snapshots are written to Redis, but use this function if you prefer to write somewhere else such as S3, Postgres, local disk, etc.  Snapshot writes are debounced, occurring as often as every 30 seconds by default following a change. See the `window` option to configure the timing.  Function takes `key` and `data` parameters.
 
   ```javascript
   function writer(key, data) {
-    fs.writeFile(`/tmp/${key}`, data);
+    redis.set(key, data);
   }
 
-- `reader` - Function to read documents from persistent storage.  Takes a `key` parameter and returns data that was written by `writer`.
+- `reader` - Function to override reading document snapshots from persistent storage.  This is the reciprocal of the `writer` function above.  Takes a `key` parameter and returns data that was written by `writer`.
 
   ```javascript
   function reader(key) {
-    return await fs.readFile(`/tmp/${key});
+    return await redis.get(key);
   }
   ```
 
 - `validator` - Function to validate incoming changes.  Useful for example to ensure the user has permissions to make the specified modification, or that the change is to an appropriate part of the document.
+
+  ```javascript
+  function validator(ws, req, { changes }) {
+    if (!req.session.isAdmin && changes.diff.filter(d => d.path.match('/settings')).length) {
+      return false;
+    } else {
+      return true;
+    }
+  }
+  ```
 
 - `window` - Minimum number of milliseconds between subsequent writes to persistent storage.  Intermediate document changes will be queued in Redis streams at least until the next write.  Defaults to `30_000` (30 seconds).
 
@@ -113,7 +127,7 @@ console.log(doc);
 // { title: "My title" }
 ```
 
-### License
+## License
 
 The MIT License
 
@@ -124,4 +138,5 @@ Permission is hereby granted, free of charge, to any person obtaining a copy of 
 The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
 
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
 

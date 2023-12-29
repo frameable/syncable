@@ -40,7 +40,7 @@ function serialize(doc) {
   return Auto.save(doc);
 }
 
-function init(args) {
+function initialize(args={}) {
 
   for (const k of Object.keys(args)) {
     if (k in args) {
@@ -174,10 +174,6 @@ const syncable = (template = {}) => {
     }));
 
     ws.on('message', async data => {
-      const validated = await config.validator(ws, req, data);
-      if (!validated) {
-        return ws.send(JSON.stringify({ error: 'invalid_error' }));
-      }
       const message = JSON.parse(data);
 
       if (message.action == 'time') {
@@ -189,6 +185,11 @@ const syncable = (template = {}) => {
       if (!doc) {
         console.log(`no doc for key ${key}`);
         return;
+      }
+
+      const validated = await config.validator(ws, req, message.data);
+      if (!validated) {
+        return ws.send(JSON.stringify({ error: 'invalid_error' }));
       }
 
       const changeTs = message.data.changes.ts;
@@ -361,29 +362,18 @@ async function find(finder) {
 }
 
 async function reader(key) {
-  try {
-    const data = await fs.readFile(`/tmp/syncable-${key}.json`, 'utf8');
-    return JSON.parse(data);
-  } catch(e) {
-    if (e.code == 'ENOENT') return;
-    throw e;
-  }
+  const handle = _getStream(key);
+  const data = await handle.get(`syncable-${key}`);
+  return data;
+}
+
+async function writer(key, data) {
+  const handle = _getStream(key);
+  return handle.set(`syncable-${key}`, data);
 }
 
 async function validator(ws, req) {
   return true;
-}
-
-async function writer(key, data) {
-  const fs = require("fs");
-  await new Promise(resolve => {
-    const data = serialize(doc);
-    fs.open(`/tmp/syncable-${key}.json`, "w+", (err, fd) =>{
-      fs.writeFile(fd, JSON.stringify(data), 'utf8', () => {
-        fs.fdatasync(fd, () => fs.close(fd, resolve))
-      });
-    });
-  });
 }
 
 function applyChanges(doc, changes) {
@@ -419,7 +409,7 @@ function proxy(key, doc) {
   return new Proxy(doc, handler);
 }
 
-syncable.init = init;
+syncable.initialize = initialize;
 syncable.client = require('./client');
 syncable.load = load;
 syncable.unload = unload;
@@ -430,5 +420,6 @@ syncable.serialize = serialize;
 syncable.on = on;
 syncable.Auto = Auto;
 syncable._config = config;
+syncable.handle = syncable;
 
 module.exports = syncable;

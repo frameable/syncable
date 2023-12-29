@@ -11,10 +11,12 @@ suite('syncable', async test => {
 
     let db = {};
 
-    syncable.init({
+    syncable.initialize({
       reader: key => db[key],
       writer: (key, data) => db[key] = data,
-      validator: (ws, req) => !req.query.a,
+      validator: (ws, req, data) => {
+        return !req.query.a;
+      }
     });
 
     const template = { count: 0 };
@@ -31,6 +33,8 @@ suite('syncable', async test => {
     const rand = random();
     const counterA = await syncable.client({url: `ws://localhost:${port}/counters/my-counter-${rand}?a=1`, onInvalidError: () => isADenied = 1});
     const counterB = await syncable.client({url: `ws://localhost:${port}/counters/my-counter-${rand}?b=1`, onInvalidError: () => isBDenied = 1});
+
+    counterA.sync(c => c.count++);
 
     await (new Promise((resolve) => {
       setTimeout(_ => {
@@ -50,7 +54,7 @@ suite('syncable', async test => {
     let writes = 0;
     const t0 = Date.now();
 
-    syncable.init({
+    syncable.initialize({
       window: 1000,
       reader: key => db[key],
       writer: (key, data) => {
@@ -87,7 +91,7 @@ suite('syncable', async test => {
     let writes = 0;
     const t0 = Date.now();
 
-    syncable.init({
+    syncable.initialize({
       window: 1000,
       reader: key => db[key],
       writer: (key, data) => {
@@ -112,7 +116,7 @@ suite('syncable', async test => {
 
     let db = {};
 
-    syncable.init({
+    syncable.initialize({
       reader: key => db[key],
       writer: (key, data) => db[key] = data,
     });
