@@ -214,15 +214,15 @@ suite('client', async test => {
     );
 
     store.thingy = {};
-    await sleep(1);
+    await sleep();
 
     const sd = await Syncable.client({url: `ws://localhost:${port}/counters/${random()}`});
-    function afterSyncHandler(doc) {
-      this.syncalbeThingy = doc;
-    }
-    sd.onAfterSync(afterSyncHandler.bind(store));
 
-    store.syncalbeThingy = sd.doc;
+    sd.on('changed', _ => {
+      store.syncableThingy = JSON.parse(JSON.stringify(sd))
+    });
+
+    store.syncalbeThingy = sd;
     await sleep(10);
 
     sd.sync(d => d.count = 42);

@@ -31,16 +31,16 @@ suite('syncable', async test => {
     let isBDenied = 0;
 
     const rand = random();
-    const counterA = await syncable.client({url: `ws://localhost:${port}/counters/my-counter-${rand}?a=1`, onInvalidError: () => isADenied = 1});
-    const counterB = await syncable.client({url: `ws://localhost:${port}/counters/my-counter-${rand}?b=1`, onInvalidError: () => isBDenied = 1});
+    const counterA = await syncable.client({url: `ws://localhost:${port}/counters/my-counter-${rand}?a=1`});
+    const counterB = await syncable.client({url: `ws://localhost:${port}/counters/my-counter-${rand}?b=1`});
+
+    counterA.on('rejected', _ => isADenied = 1);
+    counterB.on('rejected', _ => isBDenied = 1);
 
     counterA.sync(c => c.count++);
+    counterB.sync(c => c.count++);
 
-    await (new Promise((resolve) => {
-      setTimeout(_ => {
-        resolve(true);
-      }, 2000);
-    }));
+    await sleep(100);
 
     assert.equal(isADenied, 1);
     assert.equal(isBDenied, 0);

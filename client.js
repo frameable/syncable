@@ -16,27 +16,27 @@ const isNode =  typeof process !== "undefined" &&
 
 const isTestRun = isNode && process.env.IS_TEST_RUN;
 
-class Syncable {
-  constructor({url, onMessage, pingTimeoutMs, onInvalidError, resolve, reject}) {
+class Syncable extends EventTarget {
+  constructor({url, pingTimeoutMs, resolve, reject}) {
+    super();
     this.connectionTimeout = setTimeout(_ => {
       reject(`There was a problem initializing syncable [60s timeout]`);
     }, 60 * 1000);
     this.ws = new ReconnectingWebSocket(url, [], { WebSocket });
     this.id = Math.random().toString(36).slice(2);
-    this.onMessage = onMessage;
-    this.onInvalidError = onInvalidError;
     this.rater = new Rater(3);
     this.pingTimeoutMs = pingTimeoutMs || 20000;
     this.url = url;
     this._resolve = resolve;
 
     const handler = {
-      get: function(target, prop, receiver) {
+      get(target, prop, receiver) {
         const doc = docs.get(target.proxy);
-        if (prop == '_instance') {
+        if (prop == 'constructor') {
+          return target.constructor;
+        } else if (prop == '_instance') {
           return meta.get(target.proxy)._instance;
-        }
-        if (prop in doc) {
+        } else if (prop in doc) {
           return doc[prop];
         } else {
           return Reflect.get(...arguments);
@@ -44,15 +44,16 @@ class Syncable {
       },
 
       ownKeys(target) {
-        const doc = docs.get(target);
-        return Object.keys(doc);
+        const doc = docs.get(target.proxy);
+        if (!doc) console.warn("no doc in ownKeys");
+        return Object.keys(doc || {});
       },
 
       getOwnPropertyDescriptor() {
         return { configurable: true, enumerable: true };
       },
 
-      set: function(obj, prop, value) {
+      set(obj, prop, value) {
         throw new Error(`please call sync to change this document (setting ${prop})`);
       },
     };
@@ -80,31 +81,30 @@ class Syncable {
 
   initialize() {
 
+    // private methods
+
     this.ws.onopen = () => {
+      this.emit('connected');
       clearInterval(this.pingIv);
       this.isOpen = true;
       this.pendingChanges = [];
       this.applyPendingChanges();
     };
 
-    this.ws.onerror = err => {
-      console.warn(err);
+    this.ws.onerror = error => {
+      this.emit('error', { error });
+      console.warn(error);
     };
 
     this.ws.onclose = () => {
+      this.emit('closed');
       clearInterval(this.pingIv);
     }
 
     this.ws.onmessage = ({ data }) => {
       const message = JSON.parse(data);
 
-      if (this.onMessage) {
-        try {
-          this.onMessage(message);
-        } catch (e) {
-          console.warn("trouble with onMessage handler", e);
-        }
-      }
+      this.emit('message', { message });
 
       if (message.action == 'init') {
         docs.set(this.proxy, Auto.load(message.doc));
@@ -115,14 +115,16 @@ class Syncable {
         // and installed its side of the ping handler
         this.ping()
 
+        this.emit('initialized');
+
         setTimeout(_ => {
           clearInterval(this.pingIv);
           this.pingIv = setInterval(this.ping.bind(this), 5000);
         }, 60 * 1000);
 
         this.pingIv = setInterval(this.ping.bind(this), 1000);
-      } else if (message.error == 'invalid_error') {
-        if (this.onInvalidError) this.onInvalidError();
+      } else if (message.error == 'rejected') {
+        this.emit('rejected', { message });
       } else if (message.action == 'change') {
         this.rater.increment();
         this.pendingChanges.push(message.data.changes);
@@ -168,9 +170,7 @@ class Syncable {
         const doc = docs.get(this.proxy);
         for (const k in doc) doc[k] = _clone(doc[k]);
         docs.set(this.proxy, Auto.applyChangesInPlace(Auto.alias(doc), changes));
-        if (this.afterSyncHandler) {
-          this.afterSyncHandler(docs.get(this.proxy));
-        }
+        this.emit('changed', { changes })
       }
 
       this.pendingChanges = [];
@@ -192,27 +192,31 @@ class Syncable {
       if (this.lastPingResponse && ((Date.now() - this.lastPingResponse) > this.pingTimeoutMs)) {
         console.log('took too long for ping response');
         this.lastPingResponse = false;
+        this.emit('reconnecting');
         this.ws.reconnect();
       } else {
         this.ws.send(JSON.stringify({ action: 'time', data: Date.now() }));
       }
     }
 
-    this.onAfterSync = (afterSyncHandler) => {
-      this.afterSyncHandler = afterSyncHandler;
-    }
-
     this.timestamp = () => {
       return Math.floor(Date.now() - meta.get(this.proxy).delta);
     }
 
+    this.emit = (eventName, data) => {
+      this.dispatchEvent(new CustomEvent(eventName, { detail: data }));
+    }
+
   }
+
+  // public methods
 
   sync(fn) {
     const { _instance } = meta.get(this);
     if (_instance.ws.readyState === 3) {
       console.warn("can't sync before open");
       _instance.ws.reconnect();
+      this.emit('reconnecting');
     } else if (_instance.ws.readyState !== 1) {
       console.warn("websocket is not open, queueing messages");
     }
@@ -224,17 +228,20 @@ class Syncable {
       return null;
     }
     docs.set(this.proxy, newDoc);
-    if (this.afterSyncHandler) {
-      this.afterSyncHandler(newDoc);
-    }
+    _instance.emit('changed', { changes });
     this.ws.send(JSON.stringify({ action: 'change', data: { changes } }));
+  }
+
+  on(eventName, handler) {
+    const { _instance } = meta.get(this);
+    _instance.addEventListener(eventName, e => handler(e.detail));
   }
 }
 
-async function syncable({ url, onMessage, pingTimeoutMs, onInvalidError, noCache }) {
+async function syncable({ url, pingTimeoutMs, noCache }) {
   return new Promise((resolve, reject) => {
     if (!proxies[url] || noCache) {
-      new Syncable({url, onMessage, pingTimeoutMs, onInvalidError, resolve, reject});
+      new Syncable({url, pingTimeoutMs, resolve, reject});
     } else {
       resolve(proxies[url]);
     }

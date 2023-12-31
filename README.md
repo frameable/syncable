@@ -39,19 +39,9 @@ Load a live syncable document from the server.  Options include:
 
 - `url` - WebSocket url to a document where a syncable handler is listening.
 
-- `onMessage` - Custom message handler function run when a message arrives.
-
-- `onInvalidError` - Function run when a change is rejected by the server.
-
-- `pingTimeoutMs` - How long to wait for a ping response before attempting to reconnect.  Defaults to `20_000` (20 seconds).
 
 ```javascript
-let doc = await syncable.client({
-  url: `wss://localhost/documents/my-document`,
-  onMessage: message => console.log("message received!"),
-  onInvalidError: error => console.warn("change rejected!"),
-  pingTimeoutMs: 20_000,
-})
+let doc = await syncable.client({ url: `wss://localhost/documents/my-document` })
 ```
 
 ### doc.sync(fn)
@@ -65,6 +55,19 @@ doc = await doc.sync(d => d.title = 'My title');
 console.log(doc);
 // { title: "My title" }
 ```
+
+### doc.on(eventName, handler)
+
+Add an event handler function for a given event.  Emitted events include:
+
+- `initialized` - Document has been loaded from the server and is ready for consumption.
+- `changed` - Document has been changed, either by us or by another client.
+- `rejected` - Our change has been rejected by the server by the validator function.
+- `connected` - WebSocket connection has been established.
+- `reconnecting` - WebSocket is reconnecting, possibly after a ping timeout or other network event.
+- `closed` - WebSocket connection has been closed.
+- `error` - WebSocket error has occurred.
+
 
 ## Server API
 

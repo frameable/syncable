@@ -189,7 +189,7 @@ const syncable = (template = {}) => {
 
       const validated = await config.validator(ws, req, message.data);
       if (!validated) {
-        return ws.send(JSON.stringify({ error: 'invalid_error' }));
+        return ws.send(JSON.stringify({ error: 'rejected', message }));
       }
 
       const changeTs = message.data.changes.ts;
