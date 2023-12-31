@@ -1,17 +1,13 @@
-const Pigeon = require('pigeon')
-Pigeon.configure({
-  strict: false,
-});
-
-
+const Pigeon = require('pigeon');
+Pigeon.configure({ strict: false });
 const Auto = Pigeon.auto
 
 const ReconnectingWebSocket = require('reconnecting-websocket').default || require('reconnecting-websocket');
 const WebSocket = require('isomorphic-ws');
 const Rater = require('./rater');
 
-const instances = {};
-const windowSize = 10;
+const proxies = {};
+const docs = new WeakMap();
 const meta = new WeakMap();
 
 const isNode =  typeof process !== "undefined" &&
@@ -26,78 +22,63 @@ class Syncable {
       reject(`There was a problem initializing syncable [60s timeout]`);
     }, 60 * 1000);
     this.ws = new ReconnectingWebSocket(url, [], { WebSocket });
-    this.doc = {};
+    this.id = Math.random().toString(36).slice(2);
     this.onMessage = onMessage;
+    this.onInvalidError = onInvalidError;
     this.rater = new Rater(3);
     this.pingTimeoutMs = pingTimeoutMs || 20000;
+    this.url = url;
+    this._resolve = resolve;
 
     const handler = {
-      get: function(target, prop) {
-        if (prop in target.doc) {
-          return target.doc[prop];
-        } else if (prop == 'timestamp') {
-          return target.timestamp.bind(target);
-        } else if (prop == 'onAfterSync') {
-          return target.onAfterSync.bind(target);
+      get: function(target, prop, receiver) {
+        const doc = docs.get(target.proxy);
+        if (prop == '_instance') {
+          return meta.get(target.proxy)._instance;
+        }
+        if (prop in doc) {
+          return doc[prop];
         } else {
           return Reflect.get(...arguments);
         }
       },
 
-      set: function(obj, prop, value) {
-        if (prop == 'doc') {
-          obj.doc = value;
-          return true;
-        }
-
-        if (isTestRun) {
-          // allow punching into these slots of the instance from tests
-          if (prop == 'lastPingResponse') {
-            obj.lastPingResponse = value;
-            return true;
-          }
-
-          if (prop == 'pendingChanges') {
-            obj.pendingChanges = value;
-            return true;
-          }
-        }
-
-        throw new Error(`please call sync to change this document`);
+      ownKeys(target) {
+        const doc = docs.get(target);
+        return Object.keys(doc);
       },
-    }
 
-    this.getPendingChangesDelay = (rate) => {
-      return (
-        rate === null ? 3000 :
-        rate <= 1 ? 100 :
-        rate <= 2 ? 1000 :
-        rate <= 5 ? 2000 :
-        rate <= 10 ? 3000 : 5000
-      );
-    }
+      getOwnPropertyDescriptor() {
+        return { configurable: true, enumerable: true };
+      },
 
-    this.applyPendingChanges = (directCall) => {
-      if (this.pendingChanges.length) {
-        const catonatedDiffs = this.pendingChanges
-          .sort((a, b) => a.ts - b.ts)
-          .map(c => c.diff).flat()
-        const changes = Object.assign(this.pendingChanges[0], { diff: catonatedDiffs });
-        for (const k in this.doc) this.doc[k] = _clone(this.doc[k]);
-        this.doc = Auto.applyChangesInPlace(Auto.alias(this.doc), changes);
-        if (this.afterSyncHandler) {
-          this.afterSyncHandler(this.doc);
-        }
-      }
-
-      this.pendingChanges = [];
-
-      const rate = this.rater.rate();
-      const delay = this.getPendingChangesDelay(rate);
-
-      if (directCall) return;
-      setTimeout(this.applyPendingChanges, delay);
+      set: function(obj, prop, value) {
+        throw new Error(`please call sync to change this document (setting ${prop})`);
+      },
     };
+
+    this.initialize();
+
+    this.proxy = new Proxy(this, handler);
+    proxies[url] = this.proxy;
+
+    meta.set(this.proxy, { deltas: [], delta: 0, _instance: this });
+    docs.set(this.proxy, { _init: 'proxy' });
+
+    return this.proxy;
+  }
+
+  getPendingChangesDelay(rate) {
+    const MAX_DELAY = 2000;
+    return (
+      rate === null ? MAX_DELAY :
+      rate <= 1 ? 100 :
+      rate <= 5 ? 500 :
+      rate <= 10 ? 1000 : MAX_DELAY
+    );
+  }
+
+  initialize() {
 
     this.ws.onopen = () => {
       clearInterval(this.pingIv);
@@ -126,10 +107,10 @@ class Syncable {
       }
 
       if (message.action == 'init') {
-        this.doc = Auto.load(message.doc);
+        docs.set(this.proxy, Auto.load(message.doc));
         clearInterval(this.pingIv);
         clearTimeout(this.connectionTimeout);
-        resolve(instances[url]);
+        this._resolve(proxies[this.url]);
         // start pinging after the server has done the work to give us a doc
         // and installed its side of the ping handler
         this.ping()
@@ -141,30 +122,31 @@ class Syncable {
 
         this.pingIv = setInterval(this.ping.bind(this), 1000);
       } else if (message.error == 'invalid_error') {
-        if (onInvalidError) onInvalidError();
+        if (this.onInvalidError) this.onInvalidError();
       } else if (message.action == 'change') {
         this.rater.increment();
         this.pendingChanges.push(message.data.changes);
       } else if (message.serverTime) {
         const { serverTime, clientTime } = message;
         this.lastPingResponse = Date.now();
+        const windowSize = 10;
         const latency = Date.now() - clientTime;
         const delta = clientTime - serverTime + latency / 2;
-        const { deltas } = meta.get(this);
+        const { deltas } = meta.get(this.proxy);
         deltas.push(delta);
         deltas.length > windowSize && deltas.shift();
-        meta.get(this).delta = [].concat(deltas).sort((a,b) => a - b)[deltas.length/2|0];
+        meta.get(this.proxy).delta = [].concat(deltas).sort((a,b) => a - b)[deltas.length/2|0];
 
         // most recent websocket with timestamps is the winning timestamper
         Auto.setTimestamp(this.timestamp.bind(this));
 
         // resolve to syncable() caller after we have a doc and also our clock
         // is in good shape
-        if (resolve && this.doc) resolve(instances[url]);
+        if (this._resolve && docs.get(this.proxy)) this._resolve(proxies[this.url]);
       } else if (message.action == 'snapshot') {
         try {
           const { crc, ts } = message;
-          const rewindable = Auto.clone(this.doc);
+          const rewindable = Auto.clone(docs.get(this.proxy));
           Auto.rewindChanges(rewindable, ts);
           const myCrc = Auto.crc(rewindable);
           if (myCrc != crc) {
@@ -177,63 +159,84 @@ class Syncable {
       }
     };
 
-    instances[url] = new Proxy(this, handler);
-    meta.set(this, { deltas: [], delta: 0 });
-    return instances[url];
-  }
+    this.applyPendingChanges = (directCall) => {
+      if (this.pendingChanges.length) {
+        const catonatedDiffs = this.pendingChanges
+          .sort((a, b) => a.ts - b.ts)
+          .map(c => c.diff).flat()
+        const changes = Object.assign(this.pendingChanges[0], { diff: catonatedDiffs });
+        const doc = docs.get(this.proxy);
+        for (const k in doc) doc[k] = _clone(doc[k]);
+        docs.set(this.proxy, Auto.applyChangesInPlace(Auto.alias(doc), changes));
+        if (this.afterSyncHandler) {
+          this.afterSyncHandler(docs.get(this.proxy));
+        }
+      }
 
-  timestamp() {
-    return Math.floor(Date.now() - meta.get(this).delta);
-  }
+      this.pendingChanges = [];
 
-  ping() {
+      const rate = this.rater.rate();
+      const delay = this.getPendingChangesDelay(rate);
 
-    // if we're backgrounded, last ping response may be bogus
-    if (typeof document != 'undefined' && document.visibilityState == 'hidden') {
-      this.lastPingResponse = false;
+      if (directCall) return;
+      setTimeout(this.applyPendingChanges, delay);
+    };
+
+    this.ping = () => {
+
+      // if we're backgrounded, last ping response may be bogus
+      if (typeof document != 'undefined' && document.visibilityState == 'hidden') {
+        this.lastPingResponse = false;
+      }
+
+      if (this.lastPingResponse && ((Date.now() - this.lastPingResponse) > this.pingTimeoutMs)) {
+        console.log('took too long for ping response');
+        this.lastPingResponse = false;
+        this.ws.reconnect();
+      } else {
+        this.ws.send(JSON.stringify({ action: 'time', data: Date.now() }));
+      }
     }
 
-    if (this.lastPingResponse && ((Date.now() - this.lastPingResponse) > this.pingTimeoutMs)) {
-      console.log('took too long for ping response');
-      this.lastPingResponse = false;
-      this.ws.reconnect();
-    } else {
-      this.ws.send(JSON.stringify({ action: 'time', data: Date.now() }));
+    this.onAfterSync = (afterSyncHandler) => {
+      this.afterSyncHandler = afterSyncHandler;
     }
-  }
 
-  onAfterSync(afterSyncHandler) {
-    this.afterSyncHandler = afterSyncHandler;
+    this.timestamp = () => {
+      return Math.floor(Date.now() - meta.get(this.proxy).delta);
+    }
+
   }
 
   sync(fn) {
-    if (this.ws.readyState === 3) {
+    const { _instance } = meta.get(this);
+    if (_instance.ws.readyState === 3) {
       console.warn("can't sync before open");
-      this.ws.reconnect();
-    } else if(this.ws.readyState !== 1) {
+      _instance.ws.reconnect();
+    } else if (_instance.ws.readyState !== 1) {
       console.warn("websocket is not open, queueing messages");
     }
     const directCall = true;
-    this.applyPendingChanges(directCall);
-    const newDoc = Auto.change(this.doc, fn);
-    const changes = Auto.getChanges(this.doc, newDoc);
+    _instance.applyPendingChanges(directCall);
+    const newDoc = Auto.change(docs.get(this.proxy), fn);
+    const changes = Auto.getChanges(docs.get(this.proxy), newDoc);
     if (!changes.diff.length) {
       return null;
     }
-    this.doc = newDoc;
+    docs.set(this.proxy, newDoc);
     if (this.afterSyncHandler) {
       this.afterSyncHandler(newDoc);
     }
-    this.ws.send(JSON.stringify({ action: 'change', data: {changes} }));
+    this.ws.send(JSON.stringify({ action: 'change', data: { changes } }));
   }
 }
 
-async function syncable({url, onMessage, pingTimeoutMs, onInvalidError, noCache}) {
+async function syncable({ url, onMessage, pingTimeoutMs, onInvalidError, noCache }) {
   return new Promise((resolve, reject) => {
-    if (!instances[url] || noCache) {
+    if (!proxies[url] || noCache) {
       new Syncable({url, onMessage, pingTimeoutMs, onInvalidError, resolve, reject});
     } else {
-      resolve(instances[url]);
+      resolve(proxies[url]);
     }
   });
 }

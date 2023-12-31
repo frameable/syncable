@@ -154,7 +154,7 @@ suite('client', async test => {
     clientDoc.ws.addEventListener('open', _ => {
       didReconnect = true;
     });
-    clientDoc.lastPingResponse = Date.now() - 30000;
+    clientDoc._instance.lastPingResponse = Date.now() - 30000;
     await sleep(1100);
     assert.equal(didReconnect, true);
   });
@@ -167,14 +167,14 @@ suite('client', async test => {
     clientDoc.ws.addEventListener('open', _ => {
       didReconnect = true;
     });
-    clientDoc.lastPingResponse = Date.now() - 30000;
+    clientDoc._instance.lastPingResponse = Date.now() - 30000;
     global.document = { visibilityState: 'hidden' };
     await sleep(1100);
     assert.equal(didReconnect, false);
     global.document.visibilityState = 'visible';
     await sleep(1100);
     assert.equal(didReconnect, false);
-    assert(clientDoc.lastPingResponse > Date.now() - 2000, true);
+    assert(clientDoc._instance.lastPingResponse > Date.now() - 2000, true);
     delete global.document;
   });
 
@@ -250,7 +250,7 @@ suite('client', async test => {
     await sleep(10);
 
     assert.equal(store.thingy.nested.here, false);
-    assert.equal(sd.doc.count, 43);
+    assert.equal(sd.count, 43);
     assert.equal(store.syncalbeThingy.count, 43);
     assert.equal(store.syncalbeThingy.otherStuff.bob, 'ross');
 
@@ -275,12 +275,12 @@ suite('client', async test => {
     assert.equal(clientDoc.count, 100);
     assert.equal(serverDoc.count, 100);
 
-    clientDoc.pendingChanges = [
+    clientDoc._instance.pendingChanges = [
       {'diff': [{ op:'replace', path: '/count', value: 102 }], ts: Date.now() + 100046 },
       {'diff': [{ op:'replace', path: '/count', value: 101 }], ts: Date.now() + 100045 },
     ];
 
-    clientDoc.applyPendingChanges();
+    clientDoc._instance.applyPendingChanges();
     assert.equal(clientDoc.count, 102);
   });
 });
