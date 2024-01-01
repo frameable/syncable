@@ -15,11 +15,11 @@ suite('client', async test => {
     const rand = random();
     let clientDoc = await Syncable.client({url: `ws://localhost:${port}/counters/${rand}`});
     clientDoc.sync(c => c.count = 100);
-    assert.equal(!!clientDoc.pingIv._destroyed, false);
+    assert.equal(!!clientDoc._instance.pingIv._destroyed, false);
 
-    clientDoc.ws.close();
+    clientDoc._instance.ws.close();
     await sleep(100);
-    assert.equal(!!clientDoc.pingIv._destroyed, true);
+    assert.equal(!!clientDoc._instance.pingIv._destroyed, true);
 
   });
 
@@ -82,37 +82,37 @@ suite('client', async test => {
       clientADoc.sync(c => c.numbers.push(i));
     }
     await sleep(1000);
-    assert.equal(clientBDoc.rater.rate() | 0, 1);
+    assert.equal(clientBDoc._instance.rater.rate() | 0, 1);
     for (const i of Array(5).keys()) {
       clientADoc.sync(c => c.numbers.push(i));
     }
     await sleep(1000);
-    assert.equal(clientBDoc.rater.rate() | 0, 2);
+    assert.equal(clientBDoc._instance.rater.rate() | 0, 2);
     for (const i of Array(20).keys()) {
       clientADoc.sync(c => c.numbers.push(i));
     }
     await sleep(1000);
-    assert.equal(clientBDoc.rater.rate() | 0, 8);
+    assert.equal(clientBDoc._instance.rater.rate() | 0, 8);
     for (const i of Array(50).keys()) {
       clientADoc.sync(c => c.numbers.push(i));
     }
     await sleep(1000);
-    assert.equal(clientBDoc.rater.rate() | 0, 23);
+    assert.equal(clientBDoc._instance.rater.rate() | 0, 23);
     for (const i of Array(5).keys()) {
       clientADoc.sync(c => c.numbers.push(i));
     }
     await sleep(1000);
-    assert.equal(clientBDoc.rater.rate() | 0, 18);
+    assert.equal(clientBDoc._instance.rater.rate() | 0, 18);
     for (const i of Array(1).keys()) {
       clientADoc.sync(c => c.numbers.push(i));
     }
     await sleep(1000);
-    assert.equal(clientBDoc.rater.rate() | 0, 2);
+    assert.equal(clientBDoc._instance.rater.rate() | 0, 2);
     for (const i of Array(1).keys()) {
       clientADoc.sync(c => c.numbers.push(i));
     }
     await sleep(4000);
-    assert.equal(clientBDoc.rater.rate() | 0, 0);
+    assert.equal(clientBDoc._instance.rater.rate() | 0, 0);
     for (const i of Array(1).keys()) {
       clientADoc.sync(c => c.numbers.push(i));
     }
@@ -151,7 +151,7 @@ suite('client', async test => {
     let clientDoc = await Syncable.client({url: `ws://localhost:${port}/counters/${rand}`});
     await sleep(100);
     let didReconnect = false;
-    clientDoc.ws.addEventListener('open', _ => {
+    clientDoc._instance.ws.addEventListener('open', _ => {
       didReconnect = true;
     });
     clientDoc._instance.lastPingResponse = Date.now() - 30000;
@@ -164,7 +164,7 @@ suite('client', async test => {
     let clientDoc = await Syncable.client({url: `ws://localhost:${port}/counters/${rand}`});
     await sleep(100);
     let didReconnect = false;
-    clientDoc.ws.addEventListener('open', _ => {
+    clientDoc._instance.ws.addEventListener('open', _ => {
       didReconnect = true;
     });
     clientDoc._instance.lastPingResponse = Date.now() - 30000;
@@ -180,9 +180,9 @@ suite('client', async test => {
 
   await test('ping timeout parameter', async _ => {
     let clientDoc1 = await Syncable.client({url: `ws://localhost:${port}/counters/${random()}`});
-    assert.equal(clientDoc1.pingTimeoutMs, 20000);
+    assert.equal(clientDoc1._instance.pingTimeoutMs, 20000);
     let clientDoc2 = await Syncable.client({url: `ws://localhost:${port}/counters/${random()}`, pingTimeoutMs: 1500 });
-    assert.equal(clientDoc2.pingTimeoutMs, 1500);
+    assert.equal(clientDoc2._instance.pingTimeoutMs, 1500);
   });
 
   await test('vue3', async _ => {

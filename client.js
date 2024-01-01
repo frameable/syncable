@@ -36,10 +36,10 @@ class Syncable extends EventTarget {
           return target.constructor;
         } else if (prop == '_instance') {
           return meta.get(target.proxy)._instance;
-        } else if (prop in doc) {
-          return doc[prop];
-        } else {
+        } else if (prop == 'on' || prop == 'sync') {
           return Reflect.get(...arguments);
+        } else {
+          return doc[prop];
         }
       },
 
@@ -222,14 +222,14 @@ class Syncable extends EventTarget {
     }
     const directCall = true;
     _instance.applyPendingChanges(directCall);
-    const newDoc = Auto.change(docs.get(this.proxy), fn);
-    const changes = Auto.getChanges(docs.get(this.proxy), newDoc);
+    const newDoc = Auto.change(docs.get(this), fn);
+    const changes = Auto.getChanges(docs.get(this), newDoc);
     if (!changes.diff.length) {
       return null;
     }
-    docs.set(this.proxy, newDoc);
+    docs.set(this, newDoc);
     _instance.emit('changed', { changes });
-    this.ws.send(JSON.stringify({ action: 'change', data: { changes } }));
+    _instance.ws.send(JSON.stringify({ action: 'change', data: { changes } }));
   }
 
   on(eventName, handler) {
