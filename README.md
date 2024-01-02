@@ -3,7 +3,7 @@
 Synchronize JSON data structures across servers and clients over WebSockets and Redis
 
 ```javascript
-// server.js
+/* server.js */
 
 const app = express()
 
@@ -12,7 +12,7 @@ app.get('/documents/:slug', syncable())
 ```
 
 ```javascript
-// client.js
+/* client.js */
 
 // connect to the live document
 let doc = await syncable.client({url: `wss://${host}/documents/my-document-10329`})
