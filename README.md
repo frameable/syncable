@@ -5,15 +5,20 @@ Synchronize JSON data structures across servers and clients over WebSockets and 
 ```javascript
 // server.js
 
-const app = express();
-app.get('/documents/:id', syncable());
+const app = express()
+
+// our dynamic websocket route handled by syncable
+app.get('/documents/:slug', syncable())
 ```
 
 ```javascript
 // client.js
 
-let doc = await syncable.client({url: `wss://localhost/documents/my-document`});
-doc = doc.sync(d => d.title = 'New title');
+// connect to the live document
+let doc = await syncable.client({url: `wss://${host}/documents/my-document-10329`})
+
+// make a change the the document, which will be reflected on the server and all other clients
+doc.sync(d => d.title = 'New title')
 ```
 
 ## Introduction
