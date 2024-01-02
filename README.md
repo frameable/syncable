@@ -6,7 +6,7 @@ Synchronize JSON data structures across servers and clients over WebSockets and 
 // server.js
 
 const app = express();
-app.get('/documents/:id', syncable.handle());
+app.get('/documents/:id', syncable());
 ```
 
 ```javascript
@@ -28,8 +28,7 @@ Underlying documents are based on [Pigeon](https://github.com/frameable/pigeon),
 
 ## Performance and scalability
 
-Syncable scales across many backend servers and up to hundreds or thousands of simultaneous clients per document.  In lower-volume settings, each change is broadcast and applied individually, but as volume increases, changes are batched and applied in bulk.  For example, if changes are happening at a rate of 1 per second, then they will be applied without delay. 
- However, once changes are arriving at 10 per second, then the changes will be queued for 3 seconds, and then applied together as a batch.
+Syncable scales across many backend servers and up to hundreds or thousands of simultaneous clients per document.  In lower-volume settings, each change is broadcast and applied individually, but as volume increases, changes are batched and applied in bulk.  For example, if changes are happening at a rate of 1 per second, then they will be applied without delay. However, once changes are arriving at 10 per second, then the changes will be queued for 1 second, and then applied together as a batch.
 
 ## Client API
 
@@ -52,7 +51,7 @@ Make a change to the document and sync that change to all other servers and clie
 let doc = await syncable.client({ url });
 doc = await doc.sync(d => d.title = 'My title');
 
-console.log(doc);
+console.log(JSON.stringify(doc));
 // { title: "My title" }
 ```
 
@@ -75,6 +74,8 @@ Add an event handler function for a given event.  Emitted events include:
 
 Configure and initialize the syncable library.  All properties are optional:
 
+- `redis` - Configuration to be passed to [ioredis](https://github.com/redis/ioredis?tab=readme-ov-file#connect-to-redis).
+
 - `writer` - Function to override writing document snapshots to persistent storage.  By default, snapshots are written to Redis, but use this function if you prefer to write somewhere else such as S3, Postgres, local disk, etc.  Snapshot writes are debounced, occurring as often as every 30 seconds by default following a change. See the `window` option to configure the timing.  Function takes `key` and `data` parameters.
 
   ```javascript
@@ -86,7 +87,7 @@ Configure and initialize the syncable library.  All properties are optional:
 
   ```javascript
   function reader(key) {
-    return await redis.get(key);
+    return redis.get(key);
   }
   ```
 
@@ -104,7 +105,6 @@ Configure and initialize the syncable library.  All properties are optional:
 
 - `window` - Minimum number of milliseconds between subsequent writes to persistent storage.  Intermediate document changes will be queued in Redis streams at least until the next write.  Defaults to `30_000` (30 seconds).
 
-- `redis` - Configuration to be passed to `ioredis`.
 
 #### syncable.load(key)
 
