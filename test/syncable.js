@@ -20,7 +20,7 @@ suite('syncable', async test => {
     });
 
     const template = { count: 0 };
-    const { sync, handler } = syncable(template);
+    const handler = syncable(template);
 
     const app = express();
     app.get('/counters/:id', handler);
@@ -63,11 +63,11 @@ suite('syncable', async test => {
       },
     });
 
-    let doc = await syncable.load('/xdoc');
+    const doc = await syncable.load('/xdoc');
 
     await sleep(100);
     assert.equal(writes, 1, 'zeroth write');
-    doc = await doc.sync(d => d.key = 1);
+    doc.sync(d => d.key = 1);
 
     await sleep(100);
     assert.equal(writes, 1, 'write delayed');
@@ -75,7 +75,7 @@ suite('syncable', async test => {
 
     await sleep(1000);
     assert.equal(writes, 2, 'first write happened');
-    doc = await doc.sync(d => d.key = 2);
+    doc.sync(d => d.key = 2);
 
     await sleep(100);
     assert.equal(writes, 2, 'second write delayed');

@@ -21,7 +21,7 @@ class Local extends EventEmitter {
   }
   xread() {
     const args = [...arguments].reverse();
-    const [minId, key, STREAMS, ms, block] = args;
+    let [minId, key, STREAMS, ms, block] = args;
     if (minId == '$') minId = Date.now();
 
     const messages = streams[key]?.filter(m => m[0] > minId);

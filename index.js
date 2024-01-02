@@ -222,10 +222,7 @@ const syncable = (template = {}) => {
     return docs[key];
   }
 
-  return {
-    handler,
-    sync,
-  };
+  return handler;
 }
 
 async function load(key, template = {}) {
@@ -270,7 +267,7 @@ async function load(key, template = {}) {
 
     // listen for changes going forward
     setTimeout(async _ => {
-      let cursor = minId;
+      let cursor = '$';
       while (stream) {
         const [ [ _name, entries ] ] = await stream.xread('BLOCK', 0, 'STREAMS', key, cursor);
         for (const [ messageId, [ MESSAGE, message ] ] of entries || []) {
@@ -386,16 +383,16 @@ function _getStream(key) {
   return streams[key];
 }
 
-function proxy(key, doc) {
+function proxy(key) {
   const handler = {
     get: function(target, prop) {
+      const doc = docs[key];
       if (prop in doc) {
         return doc[prop];
       } else if (prop == 'sync') {
         return async function sync(fn) {
           const s = await _syncDoc(key, doc, fn)
           docs[key] = s
-          return proxy(key, docs[key]);
         }
       } else {
         return Reflect.get(...arguments);

@@ -15,11 +15,11 @@ suite('client', async test => {
     const rand = random();
     let clientDoc = await Syncable.client({url: `ws://localhost:${port}/counters/${rand}`});
     clientDoc.sync(c => c.count = 100);
-    assert.equal(!!clientDoc._instance.pingIv._destroyed, false);
+    assert.equal(!!clientDoc._transport.pingIv._destroyed, false);
 
-    clientDoc._instance.ws.close();
+    clientDoc._transport.ws.close();
     await sleep(100);
-    assert.equal(!!clientDoc._instance.pingIv._destroyed, true);
+    assert.equal(!!clientDoc._transport.pingIv._destroyed, true);
 
   });
 
@@ -82,37 +82,37 @@ suite('client', async test => {
       clientADoc.sync(c => c.numbers.push(i));
     }
     await sleep(1000);
-    assert.equal(clientBDoc._instance.rater.rate() | 0, 1);
+    assert.equal(clientBDoc._transport.rater.rate() | 0, 1);
     for (const i of Array(5).keys()) {
       clientADoc.sync(c => c.numbers.push(i));
     }
     await sleep(1000);
-    assert.equal(clientBDoc._instance.rater.rate() | 0, 2);
+    assert.equal(clientBDoc._transport.rater.rate() | 0, 2);
     for (const i of Array(20).keys()) {
       clientADoc.sync(c => c.numbers.push(i));
     }
     await sleep(1000);
-    assert.equal(clientBDoc._instance.rater.rate() | 0, 8);
+    assert.equal(clientBDoc._transport.rater.rate() | 0, 8);
     for (const i of Array(50).keys()) {
       clientADoc.sync(c => c.numbers.push(i));
     }
     await sleep(1000);
-    assert.equal(clientBDoc._instance.rater.rate() | 0, 23);
+    assert.equal(clientBDoc._transport.rater.rate() | 0, 23);
     for (const i of Array(5).keys()) {
       clientADoc.sync(c => c.numbers.push(i));
     }
     await sleep(1000);
-    assert.equal(clientBDoc._instance.rater.rate() | 0, 18);
+    assert.equal(clientBDoc._transport.rater.rate() | 0, 18);
     for (const i of Array(1).keys()) {
       clientADoc.sync(c => c.numbers.push(i));
     }
     await sleep(1000);
-    assert.equal(clientBDoc._instance.rater.rate() | 0, 2);
+    assert.equal(clientBDoc._transport.rater.rate() | 0, 2);
     for (const i of Array(1).keys()) {
       clientADoc.sync(c => c.numbers.push(i));
     }
     await sleep(4000);
-    assert.equal(clientBDoc._instance.rater.rate() | 0, 0);
+    assert.equal(clientBDoc._transport.rater.rate() | 0, 0);
     for (const i of Array(1).keys()) {
       clientADoc.sync(c => c.numbers.push(i));
     }
@@ -123,27 +123,28 @@ suite('client', async test => {
 
   await test('server race', async _ => {
     const rand = random();
-    const clientADoc = await Syncable.client({url: `ws://localhost:${port}/counters/${rand}`, noCache: true});
-    clientADoc.sync(c => c.numbers = []);
-    await sleep(100);
+    let serverDoc = await Syncable.load(`/counters/${rand}`, { numbers: [] });
 
     // underdog racing team
     setTimeout(async _ => {
       for (const i of Array(5).keys()) {
-        await sync(`/counters/${rand}`, c => c.numbers.push(i));
-        await sleep(20)
+        serverDoc.sync(c => c.numbers.push(i));
+        await sleep(100)
       }
     });
 
     // incumbent racing team
     for (const i of Array(5).keys()) {
-      await sync(`/counters/${rand}`, c => c.numbers.push(i));
-      await sleep(20)
+      serverDoc.sync(c => c.numbers.push(i));
+      await sleep(100)
     }
 
-    const clientBDoc = await Syncable.client({url: `ws://localhost:${port}/counters/${rand}`, noCache: true});
+    const clientDoc = await Syncable.client({url: `ws://localhost:${port}/counters/${rand}`, noCache: true});
     await sleep(1000);
-    assert.equal(clientBDoc.numbers.length, 10);
+
+    assert.equal(serverDoc.numbers.length, 10);
+    assert.equal(clientDoc.numbers.length, 10);
+
   });
 
   await test('ping timeout reconnect', async _ => {
@@ -151,10 +152,10 @@ suite('client', async test => {
     let clientDoc = await Syncable.client({url: `ws://localhost:${port}/counters/${rand}`});
     await sleep(100);
     let didReconnect = false;
-    clientDoc._instance.ws.addEventListener('open', _ => {
+    clientDoc._transport.ws.addEventListener('open', _ => {
       didReconnect = true;
     });
-    clientDoc._instance.lastPingResponse = Date.now() - 30000;
+    clientDoc._transport.lastPingResponse = Date.now() - 30000;
     await sleep(1100);
     assert.equal(didReconnect, true);
   });
@@ -164,106 +165,59 @@ suite('client', async test => {
     let clientDoc = await Syncable.client({url: `ws://localhost:${port}/counters/${rand}`});
     await sleep(100);
     let didReconnect = false;
-    clientDoc._instance.ws.addEventListener('open', _ => {
+    clientDoc._transport.ws.addEventListener('open', _ => {
       didReconnect = true;
     });
-    clientDoc._instance.lastPingResponse = Date.now() - 30000;
+    clientDoc._transport.lastPingResponse = Date.now() - 30000;
     global.document = { visibilityState: 'hidden' };
     await sleep(1100);
     assert.equal(didReconnect, false);
     global.document.visibilityState = 'visible';
     await sleep(1100);
     assert.equal(didReconnect, false);
-    assert(clientDoc._instance.lastPingResponse > Date.now() - 2000, true);
+    assert(clientDoc._transport.lastPingResponse > Date.now() - 2000, true);
     delete global.document;
   });
 
   await test('ping timeout parameter', async _ => {
     let clientDoc1 = await Syncable.client({url: `ws://localhost:${port}/counters/${random()}`});
-    assert.equal(clientDoc1._instance.pingTimeoutMs, 20000);
+    assert.equal(clientDoc1._transport.pingTimeoutMs, 20000);
     let clientDoc2 = await Syncable.client({url: `ws://localhost:${port}/counters/${random()}`, pingTimeoutMs: 1500 });
-    assert.equal(clientDoc2._instance.pingTimeoutMs, 1500);
+    assert.equal(clientDoc2._transport.pingTimeoutMs, 1500);
   });
 
   await test('vue3', async _ => {
     const { reactive, watch } = require('vue');
     const store = reactive({
-      thingy: {
-        foo: 'bar',
-        count: 0,
-        nested: {
-          here: true,
+      userId: 'user-1',
+      sharedState: {
+        seed: 294381,
+        turnId: 0,
+        instance: {
+          startTime: '2024-01-01'
         }
       },
-      otherThingy: 'foo',
-      syncalbeThingy: {},
     });
 
 
     let watchCount = 0;
-    watch(
-      () => store,
-      (newVal, oldVal) => {
-        watchCount++;
-        if (watchCount == 7) {
-          assert.equal(newVal.syncalbeThingy.count, 43);
-          assert.equal(newVal.syncalbeThingy.otherStuff.bob, 'ross');
-        }
-      },
-      { deep: true },
-    );
+    watch(_ => store, (_ => watchCount++), { deep: true });
 
-    store.thingy = {};
-    await sleep();
+    const doc = await Syncable.client({url: `ws://localhost:${port}/state/${random()}`});
 
-    const sd = await Syncable.client({url: `ws://localhost:${port}/counters/${random()}`});
-
-    sd.on('changed', _ => {
-      store.syncableThingy = JSON.parse(JSON.stringify(sd))
+    doc.on('changed', _ => {
+      store.sharedState = _clone(doc);
     });
 
-    store.syncalbeThingy = sd;
+    doc.sync(d => Object.assign(d, store.sharedState));
     await sleep(10);
 
-    sd.sync(d => d.count = 42);
+    doc.sync(d => d.turnId = 42);
     await sleep(10);
 
-    sd.sync(d => d.count = 43);
-    await sleep(10);
-
-    store.thingy = {
-      foo: 'bar',
-      count: 32,
-      nested: {
-        here: true,
-      },
-    };
-    await sleep(10);
-
-    store.thingy.nested.here = false;
-    await sleep(10);
-
-    sd.sync(d => {
-      d.count = 43;
-      d.otherStuff = { bob: 'ross' };
-    });
-    await sleep(10);
-
-    assert.equal(store.thingy.nested.here, false);
-    assert.equal(sd.count, 43);
-    assert.equal(store.syncalbeThingy.count, 43);
-    assert.equal(store.syncalbeThingy.otherStuff.bob, 'ross');
-
-    sd.sync(d => {
-      d.count = 40;
-      d.otherStuff = false;
-    });
-    await sleep(1);
-
-    assert.equal(store.syncalbeThingy.count, 40);
-    assert.equal(store.syncalbeThingy.otherStuff, false);
-
-    assert.equal(watchCount, 8);
+    assert.equal(store.sharedState.turnId, 42);
+    assert.equal(store.userId, 'user-1');
+    assert.equal(watchCount, 2);
   });
 
   await test('pending sort', async _ => {
@@ -275,12 +229,12 @@ suite('client', async test => {
     assert.equal(clientDoc.count, 100);
     assert.equal(serverDoc.count, 100);
 
-    clientDoc._instance.pendingChanges = [
+    clientDoc._transport.pendingChanges = [
       {'diff': [{ op:'replace', path: '/count', value: 102 }], ts: Date.now() + 100046 },
       {'diff': [{ op:'replace', path: '/count', value: 101 }], ts: Date.now() + 100045 },
     ];
 
-    clientDoc._instance.applyPendingChanges();
+    clientDoc._transport.applyPendingChanges();
     assert.equal(clientDoc.count, 102);
   });
 });
@@ -300,11 +254,12 @@ async function setup() {
   });
 
   const app = express();
-  const { sync, handler } = Syncable(template);
+  const handler = Syncable(template);
+  app.get('/state/:id', handler);
   app.get('/counters/:id', handler);
   app.get('/prefix/counters/:id', handler);
   const server = await app.listen();
-  return { sync, server };
+  return { server };
 }
 
 async function sleep(ms) {
@@ -313,4 +268,8 @@ async function sleep(ms) {
 
 function random() {
   return Math.random().toString(36).slice(2);
+}
+
+function _clone(o) {
+  return JSON.parse(JSON.stringify(o));
 }
