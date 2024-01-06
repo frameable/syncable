@@ -27,6 +27,7 @@ function prevWindowTs(ts=Date.now()) {
 
 let subscriber;
 let publisher;
+let snapshotter;
 
 let CHANNEL;
 let Bus;
@@ -54,6 +55,7 @@ function initialize(args={}) {
 
   subscriber = new Bus(config.redis);
   publisher = new Bus(config.redis);
+  snapshotter = new Bus(config.redis);
 
   subscriber.on('message', async (channel, message) => {
     const { key, action } = JSON.parse(message);
@@ -359,14 +361,16 @@ async function find(finder) {
 }
 
 async function reader(key) {
-  const handle = _getStream(key);
-  const data = await handle.get(`syncable-${key}`);
+  const data = await snapshotter.get(`syncable:${key}`);
   return data;
 }
 
 async function writer(key, data) {
-  const handle = _getStream(key);
-  return handle.set(`syncable-${key}`, data);
+  try {
+    await snapshotter.set(`syncable:${key}`, data);
+  } catch (e) {
+    console.error("couldn't write ${key}", e);
+  }
 }
 
 async function validator(ws, req) {
